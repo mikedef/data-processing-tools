@@ -1,0 +1,203 @@
+#!/usr/bin/env python
+# Tesing a basic subscriber and publisher program. Goal is to subscribe to image message and publish as a new topic
+import sys, time
+import rospy
+import roslib
+from sensor_msgs.msg import Image, CompressedImage
+from cv_bridge import CvBridge, CvBridgeError
+import cv2
+import numpy as np
+
+
+#init
+VERBOSE = True
+sub_img_topic = False
+left_img_topic = False
+right_img_topic = False
+flir_img_topic = False
+
+br = CvBridge()
+left_camera = False
+right_camera = False
+center_camera = False
+flir_camera = False
+
+# original image topic to subscribe from 
+left_camera = rospy.get_param('~/left_camera/left_camera/image_topic')
+if left_camera:
+    left_img_topic = rospy.get_param('~/left_camera/left_camera/image_topic')
+
+#  For Rex
+#center_camera = rospy.get_param('~/center_camera/center_camera/image_topic')
+#if center_camera:
+#    sub_img_topic = rospy.get_param('~/center_camera/center_camera/image_topic')
+
+
+right_camera = rospy.get_param('~/right_camera/right_camera/image_topic')
+if right_camera:
+    right_img_topic = rospy.get_param('~/right_camera/right_camera/image_topic')
+
+flir_camera = rospy.get_param('~/flir_boson/flir_boson/image_topic')
+if flir_camera:
+    flir_img_topic = rospy.get_param('~/flir_boson/flir_boson/image_topic')
+                  
+
+pub_left = rospy.Publisher('/rotated_left/image_color/compressed', CompressedImage, queue_size=1)
+pub_right = rospy.Publisher('/rotated_right/image_color/compressed', CompressedImage, queue_size=1)
+pub_flir = rospy.Publisher('/rotated_flir/image_raw', Image, queue_size=1)
+
+def image_cb(msg):
+    if VERBOSE:
+        print('Received msg')
+
+    # Convert to CV2
+    cv2_img = br.compressed_imgmsg_to_cv2(msg, desired_encoding='bgr8')
+    # Get image height and width
+    (h, w) = cv2_img.shape[:2]
+    # Calculate the center of the image
+    center = (w/2 , h/2)
+    # Angle to rotate in degrees
+    angle = 180
+    # Scale
+    scale = 1.0
+    # Perform counter clockwise rotation holding at the center
+    M = cv2.getRotationMatrix2D(center, angle, scale)
+    rotated_img = cv2.warpAffine(cv2_img, M, (w, h))
+    
+    # cv to ros data type and publish
+    ros_msg = CompressedImage()
+    ros_msg.header.stamp = msg.header.stamp
+    ros_msg.format = "jpeg"
+    ros_msg.data = np.array(cv2.imencode('.jpg', rotated_img)[1]).tostring()
+
+                
+    #pub_rotated_image.publish(ros_msg)
+    if left_camera:
+        pub_left.publish(ros_msg)
+    
+def image_right_cb(msg):
+    if VERBOSE:
+        print('Received msg')
+
+    # Convert to CV2
+    cv2_img = br.compressed_imgmsg_to_cv2(msg, desired_encoding='bgr8')
+    # Get image height and width
+    (h, w) = cv2_img.shape[:2]
+    # Calculate the center of the image
+    center = (w/2 , h/2)
+    # Angle to rotate in degrees
+    angle = 180
+    # Scale
+    scale = 1.0
+    # Perform counter clockwise rotation holding at the center
+    M = cv2.getRotationMatrix2D(center, angle, scale)
+    rotated_img = cv2.warpAffine(cv2_img, M, (w, h))
+    
+    # cv to ros data type and publish
+    #  Note this is the way to do it for a compressed image, see Flir_cb for non-compressed!!!
+    ros_msg = CompressedImage()
+    ros_msg.header.stamp = msg.header.stamp
+    ros_msg.format = "jpeg"
+    ros_msg.data = np.array(cv2.imencode('.jpg', rotated_img)[1]).tostring()
+    
+    if right_camera:
+        pub_right.publish(ros_msg)
+        
+def image_flir_cb(msg):
+    if VERBOSE:
+        print('FLIR Received')
+        print(msg.header)
+
+        
+    # Convert to CV2
+    cv2_img = br.imgmsg_to_cv2(msg, 'mono8')
+    # Get image height and width
+    (h, w) = cv2_img.shape[:2]
+    # Calculate the center of the image
+    center = (w/2 , h/2)
+    # Angle to rotate in degrees
+    angle = 180
+    # Scale
+    scale = 1.0
+    # Perform counter clockwise rotation holding at the center
+    M = cv2.getRotationMatrix2D(center, angle, scale)
+    rotated_img = cv2.warpAffine(cv2_img, M, (w, h))
+    
+    # cv to ros data type and publish
+    ros_msg = br.cv2_to_imgmsg(rotated_img, 'mono8')
+    ros_msg.header.stamp = msg.header.stamp
+    
+    pub_flir.publish(ros_msg)
+    
+
+def image_sub():
+    rospy.init_node('image_sub', anonymous=True) # Should this be false? 
+
+    # setup subscriber and callback
+    # if COMPRESSED:
+    if left_camera:
+        rospy.Subscriber(left_img_topic, CompressedImage, image_cb, queue_size=1)
+    if right_camera:
+        rospy.Subscriber(right_img_topic, CompressedImage, image_right_cb, queue_size=1)
+    if flir_camera:
+        rospy.Subscriber(flir_img_topic, Image, image_flir_cb, queue_size=1)
+        
+            
+    # spin until ctrl + c
+    while not rospy.is_shutdown():
+        rospy.spin()
+
+
+try:
+    image_sub()
+except rospy.ROSInterruptException:
+    pass
+
+
+
+'''
+def save_cb(msg):
+        
+    cv_compressed_image = br.compressed_imgmsg_to_cv2(msg, desired_encoding='bgr8')
+    # Get image height and width
+    (h, w) = cv_compressed_image.shape[:2]
+    # Calculate the center of the image
+    center = (w/2 , h/2)
+    # Angle to rotate in degrees
+    angle = 180
+    # Scale
+    scale = 1.0
+    # Perform counter clockwise rotation holding at the center
+    M = cv2.getRotationMatrix2D(center, angle, scale)
+    rotated_img = cv2.warpAffine(cv_compressed_image, M, (w, h))
+    
+    # Get timestamp from image message header and set image name
+    timestr = "%.6f.jpg" % msg.header.stamp.to_sec()
+    image_name = '/home/mikedef/catkin_ws/src/ros-rex4-perception/rex4_perception/src' + '/' + timestr
+    #os.chdir(left_camera_path) # change into topic folder
+    cv2.imwrite(timestr, rotated_img)   
+'''
+# Create rotated image topic name to publish under
+'''
+img_topic = sub_img_topic  # sub_img_topic
+img_topic = img_topic.strip('/')  # remove leading '/'
+img_topic = img_topic.split('/')  # split into list of strings split at each '/'
+rotated_topic = ''  # '/rotated_' + img_topic[0]
+
+for i, name in enumerate(img_topic):
+    if i == 0:
+        rotated_topic += '/rotated_' + name
+    else:
+        rotated_topic += '/' + name
+# print("rotated topic name: {}".format(rotated_topic))
+
+# Figure out if image is compressed
+if img_topic[-1] == "compressed":
+    COMPRESSED = True
+
+# Set publisher based on image msg type
+if COMPRESSED:
+    pub_rotated_image = rospy.Publisher(rotated_topic, CompressedImage, queue_size=1)
+else:
+    pub_rotated_image = rospy.Publisher(rotated_topic, Image, queue_size=1)
+'''

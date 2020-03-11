@@ -1,0 +1,15 @@
+# 2020-02
+# Author: Michael DeFilippo (mikedef@mit.edu), AUV Lab
+# License: MIT
+
+'''
+    Script to take radial spoke radar data to create a bag file 
+'''
+
+import os
+import sys
+import csv
+
+import rosbag
+import rospy
+from rex4_tools.msg import radar_radial_point
